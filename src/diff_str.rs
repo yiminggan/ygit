@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+use std::io::{self, BufRead, BufReader, Write};
+use std::fs::File;
 
 fn shortest_edit(str1: &[String], str2: &[String]) -> Vec<HashMap<isize, isize>> {
     let n: isize = str1.len() as isize;
@@ -101,8 +103,63 @@ pub fn diff(a_lines: &[String], b_lines: &[String]) -> Vec<Edit> {
         } else if y == prev_y {
             diff_edits.push(Edit { method: EditMethod::Delete, content: a_lines[prev_x as usize].clone() });
         } else {
-            diff_edits.push(Edit { method: EditMethod::Keep, content: a_lines[prev_x as usize].clone() });
+            diff_edits.push(Edit { method: EditMethod::Keep, content: "".to_string() });
         }
     }
     diff_edits
+}
+
+pub fn modify_file(diff_result: Vec<Edit>, 
+                    file_path:&String, 
+                    modify:Option<&i32>) -> io::Result<()> {
+    let original_file = File::open(file_path)?;
+    let reader = BufReader::new(original_file);
+    let original_lines: Vec<String> = reader.lines().collect::<Result<_, _>>()?;
+    let modify = modify.unwrap_or(&1);
+
+    let mut new_lines = Vec::new();
+    let mut original_idx = 0;
+
+    for edit in diff_result {
+        match edit.method {
+            EditMethod::Keep => {
+                if original_idx < original_lines.len() {
+                    new_lines.push(original_lines[original_idx].clone());
+                    original_idx += 1;
+                } else {
+                    eprintln!(
+                        "Warning: Keep operation exceeds original file {} {}", 
+                        file_path, 
+                        original_idx
+                    )
+                }
+            }
+            EditMethod::Delete => {
+                if *modify > 0 {
+                    original_idx += 1;
+                } else {
+                    new_lines.push(edit.content);
+                }
+            }
+            EditMethod::Insert => {
+                if *modify > 0 {
+                    new_lines.push(edit.content);
+                } else {
+                    original_idx += 1;
+                }
+            }
+        }
+    }
+
+    while original_idx < original_lines.len() {
+        new_lines.push(original_lines[original_idx].clone());
+        original_idx += 1;
+    }
+
+    let mut file = File::create(file_path)?;
+    for line in new_lines {
+        writeln!(file, "{}", line)?;
+    }
+
+    Ok(())
 }
